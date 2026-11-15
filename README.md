@@ -10,8 +10,9 @@ Các service đăng ký vào đây khi khởi động và gửi heartbeat địn
 | Jobbeacon-recommendation | `jobbeacon-recommendation` |
 | Jobbeacon-sync | `jobbeacon-sync` |
 | job-posting-crawler | `job-posting-crawler` |
+| Jobbeacon-gateway | `jobbeacon-gateway` |
 
-Lời gọi HTTP giữa các service đi qua Feign theo tên service, không dùng URL cố định. Hiện chỉ có một luồng như vậy: recommendation gọi API `/internal/**` của backend qua `@FeignClient(name = "${app.backend.service-id}")` (mặc định `jobbeacon-be`). Crawler, sync và backend không gọi HTTP sang nhau (chúng giao tiếp qua RabbitMQ và CDC), nên chỉ đăng ký để hiện trên registry.
+Lời gọi HTTP giữa các service đi qua Feign theo tên service, không dùng URL cố định. Hiện chỉ có một luồng như vậy: recommendation gọi API `/jobbeacon-be/internal/**` của backend (mỗi service có context path bằng tên của nó) qua `@FeignClient(name = "${app.backend.service-id}")` (mặc định `jobbeacon-be`). Crawler, sync và backend không gọi HTTP sang nhau (chúng giao tiếp qua RabbitMQ và CDC), nên chỉ đăng ký để hiện trên registry.
 
 ## Chạy local
 
