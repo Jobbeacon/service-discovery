@@ -1,0 +1,84 @@
+# CI/CD for Jobbeacon-discovery. Pull request: tests only. Push to main: tests, build and push
+# ghcr.io/<owner>/jobbeacon-discovery:latest, then on the VM pull it and recreate only the `discovery` service.
+# Secrets: VM_HOST, VM_USER, VM_SSH_KEY. Setup: jobbeacon-deployment/README.md.
+name: ci-cd
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+env:
+  SERVICE: discovery
+  IMAGE_NAME: jobbeacon-discovery
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+      - run: mvn -B test
+
+  image:
+    if: github.event_name == 'push'
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      # GHCR names must be lowercase, and account names such as Duong4762 are not.
+      - id: name
+        run: |
+          owner=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          echo "image=ghcr.io/$owner/$IMAGE_NAME:latest" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.name.outputs.image }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    needs: image
+    runs-on: ubuntu-latest
+    concurrency:
+      group: deploy-${{ github.repository }}
+      cancel-in-progress: false
+    steps:
+      - name: Configure SSH
+        env:
+          VM_SSH_KEY: ${{ secrets.VM_SSH_KEY }}
+          VM_HOST: ${{ secrets.VM_HOST }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$VM_SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H "$VM_HOST" >> ~/.ssh/known_hosts
+
+      # --no-deps leaves Postgres, RabbitMQ and the other services alone; --wait fails the job if the new container
+      # never becomes healthy (it keeps running: fix and push again).
+      - name: Deploy on the VM
+        env:
+          VM_HOST: ${{ secrets.VM_HOST }}
+          VM_USER: ${{ secrets.VM_USER }}
+        run: |
+          ssh "$VM_USER@$VM_HOST" "set -e
+            cd /opt/jobbeacon/jobbeacon-deployment
+            docker compose pull $SERVICE
+            docker compose up -d --no-deps --no-build --wait --wait-timeout 300 $SERVICE
+            docker image prune -f"
