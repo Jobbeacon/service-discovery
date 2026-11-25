@@ -1,6 +1,8 @@
 spring:
   application:
     name: jobbeacon-discovery
+  profiles:
+    active: ${PROFILE_ACTIVE:local}
 
 server:
   port: ${PORT:8761}
@@ -22,7 +24,7 @@ management:
   endpoints:
     web:
       exposure:
-        include: health
+        include: health,prometheus
   endpoint:
     health:
       show-details: never
